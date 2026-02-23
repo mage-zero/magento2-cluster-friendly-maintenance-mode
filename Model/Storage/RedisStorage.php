@@ -80,9 +80,9 @@ class RedisStorage implements StorageInterface
 
     private function resolveConfig(string $envVar, string $backendOption, string $default): string
     {
-        $envValue = getenv($envVar);
-        if ($envValue !== false && $envValue !== '') {
-            return $envValue;
+        $envValue = $_ENV[$envVar] ?? $_SERVER[$envVar] ?? null;
+        if ($envValue !== null && $envValue !== '') {
+            return (string) $envValue;
         }
 
         $configValue = $this->deploymentConfig->get(
@@ -97,8 +97,8 @@ class RedisStorage implements StorageInterface
 
     private function resolveDb(): int
     {
-        $envDb = getenv('MAGENTO_MAINTENANCE_REDIS_DB');
-        if ($envDb !== false && $envDb !== '') {
+        $envDb = $_ENV['MAGENTO_MAINTENANCE_REDIS_DB'] ?? $_SERVER['MAGENTO_MAINTENANCE_REDIS_DB'] ?? null;
+        if ($envDb !== null && $envDb !== '') {
             return (int) $envDb;
         }
 

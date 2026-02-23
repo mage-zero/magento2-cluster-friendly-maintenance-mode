@@ -2,6 +2,13 @@
 
 set -e
 
+# Install ext-redis if not already present (ExtDN images may not include it).
+if ! php -m 2>/dev/null | grep -qi '^redis$'; then
+    if command -v pecl >/dev/null 2>&1; then
+        pecl install redis >/dev/null 2>&1 && docker-php-ext-enable redis 2>/dev/null || true
+    fi
+fi
+
 REPOSITORY_URL="${REPOSITORY_URL:-https://repo-magento-mirror.fooman.co.nz/}"
 
 # Remove any default Magento repo entries and replace with the mirror.

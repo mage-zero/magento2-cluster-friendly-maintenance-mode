@@ -29,6 +29,7 @@ jobs:
       - uses: extdn/github-actions-m2/magento-phpstan/8.3@master
         with:
           composer_name: magezero/magento2-cluster-friendly-maintenance-mode
+          magento_pre_install_script: .github/workflows/scripts/magento-pre-install.sh
 
   phpstan-84:
     name: PHPStan (PHP 8.4)
@@ -40,6 +41,7 @@ jobs:
       - uses: extdn/github-actions-m2/magento-phpstan/8.4@master
         with:
           composer_name: magezero/magento2-cluster-friendly-maintenance-mode
+          magento_pre_install_script: .github/workflows/scripts/magento-pre-install.sh
 
   phpmd:
     name: PHP Mess Detector
