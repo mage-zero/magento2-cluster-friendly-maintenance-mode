@@ -22,7 +22,7 @@ class DatabaseStorageTest extends TestCase
     {
         $objectManager = Bootstrap::getObjectManager();
         $this->resource = $objectManager->get(ResourceConnection::class);
-        $this->storage = $objectManager->create(DatabaseStorage::class);
+        $this->storage = new DatabaseStorage($this->resource);
 
         // Clean slate for each test
         $connection = $this->resource->getConnection();
