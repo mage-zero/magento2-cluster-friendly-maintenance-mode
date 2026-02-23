@@ -64,46 +64,20 @@ class RedisStorage implements StorageInterface
         }
 
         try {
-            $host = $this->resolveConfig('MAGENTO_MAINTENANCE_REDIS_HOST', 'server', '127.0.0.1');
-            $port = (int) $this->resolveConfig('MAGENTO_MAINTENANCE_REDIS_PORT', 'port', (string) self::DEFAULT_PORT);
-            $db = $this->resolveDb();
+            $host = (string) ($this->deploymentConfig->get(
+                'cache/frontend/default/backend_options/server'
+            ) ?? '127.0.0.1');
+            $port = (int) ($this->deploymentConfig->get(
+                'cache/frontend/default/backend_options/port'
+            ) ?? self::DEFAULT_PORT);
 
             $redis = new \Redis();
             $redis->connect($host, $port, self::CONNECT_TIMEOUT);
-            $redis->select($db);
+            $redis->select(self::DEFAULT_DB);
             $this->redis = $redis;
             return $this->redis;
         } catch (\RedisException $e) {
             throw new \RuntimeException('Redis connection failed: ' . $e->getMessage(), 0, $e);
         }
-    }
-
-    private function resolveConfig(string $envVar, string $backendOption, string $default): string
-    {
-        // phpcs:ignore Magento2.Functions.DiscouragedFunction -- env var override for container config
-        $envValue = getenv($envVar);
-        if ($envValue !== false && $envValue !== '') {
-            return (string) $envValue;
-        }
-
-        $configValue = $this->deploymentConfig->get(
-            'cache/frontend/default/backend_options/' . $backendOption
-        );
-        if ($configValue) {
-            return (string) $configValue;
-        }
-
-        return $default;
-    }
-
-    private function resolveDb(): int
-    {
-        // phpcs:ignore Magento2.Functions.DiscouragedFunction -- env var override for container config
-        $envDb = getenv('MAGENTO_MAINTENANCE_REDIS_DB');
-        if ($envDb !== false && $envDb !== '') {
-            return (int) $envDb;
-        }
-
-        return self::DEFAULT_DB;
     }
 }
