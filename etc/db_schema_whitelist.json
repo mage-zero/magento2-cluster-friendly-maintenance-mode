@@ -1,0 +1,11 @@
+{
+    "maintenance_mode": {
+        "column": {
+            "flag_key": true,
+            "flag_value": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    }
+}

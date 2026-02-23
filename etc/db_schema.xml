@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
+    <table name="maintenance_mode" resource="default" engine="innodb"
+           comment="Cluster-wide maintenance mode state">
+        <column xsi:type="varchar" name="flag_key" nullable="false" length="64"
+                comment="State key (flag, ips)"/>
+        <column xsi:type="text" name="flag_value" nullable="true"
+                comment="State value"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="flag_key"/>
+        </constraint>
+    </table>
+</schema>
