@@ -15,8 +15,8 @@ use PHPUnit\Framework\TestCase;
  */
 class DatabaseStorageTest extends TestCase
 {
-    private DatabaseStorage $storage;
-    private ResourceConnection $resource;
+    private ?DatabaseStorage $storage = null;
+    private ?ResourceConnection $resource = null;
 
     protected function setUp(): void
     {
@@ -32,9 +32,11 @@ class DatabaseStorageTest extends TestCase
 
     protected function tearDown(): void
     {
-        $connection = $this->resource->getConnection();
-        $table = $this->resource->getTableName('maintenance_mode');
-        $connection->delete($table);
+        if ($this->resource !== null) {
+            $connection = $this->resource->getConnection();
+            $table = $this->resource->getTableName('maintenance_mode');
+            $connection->delete($table);
+        }
     }
 
     // ── hasFlag / setFlag ───────────────────────────────────────────────
