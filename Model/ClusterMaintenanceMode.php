@@ -27,26 +27,72 @@ class ClusterMaintenanceMode extends MaintenanceMode
 
     private Manager $eventMgr;
 
+    private const IP_ADDRESS_CLASS = \Magento\Framework\App\Utility\IPAddress::class;
+
     public function __construct(
         Filesystem $filesystem,
         StorageInterface $storage,
         ?Manager $eventManager = null
     ) {
         $om = \Magento\Framework\App\ObjectManager::getInstance();
-
-        // Magento 2.4.8+ added IPAddress as a required constructor parameter.
-        // Detect and adapt so the module works on 2.4.4 through 2.4.8+.
-        if (class_exists(\Magento\Framework\App\Utility\IPAddress::class)) {
-            $ipAddress = $om->get(\Magento\Framework\App\Utility\IPAddress::class);
-            parent::__construct($filesystem, $ipAddress, $eventManager); // @phpstan-ignore arguments.count
-            $this->ipAddressUtil = $ipAddress;
-        } else {
-            parent::__construct($filesystem, $eventManager);
-            $this->ipAddressUtil = null;
-        }
+        $this->initializeParentMaintenanceMode($filesystem, $eventManager, $om);
 
         $this->storage = $storage;
         $this->eventMgr = $eventManager ?? $om->get(Manager::class);
+    }
+
+    /**
+     * Invoke parent constructor safely across Magento framework versions.
+     *
+     * Different framework versions accept different constructor shapes:
+     * - (Filesystem, EventManager?)
+     * - (Filesystem, IPAddress)
+     * - (Filesystem, IPAddress, EventManager?)
+     *
+     * Reflection avoids hardcoding one signature and keeps DI compile stable.
+     */
+    private function initializeParentMaintenanceMode(
+        Filesystem $filesystem,
+        ?Manager $eventManager,
+        \Magento\Framework\ObjectManagerInterface $objectManager
+    ): void {
+        $ctor = new \ReflectionMethod(MaintenanceMode::class, '__construct');
+        $parameters = $ctor->getParameters();
+        $args = [$filesystem];
+
+        $this->ipAddressUtil = null;
+        $resolvedEventManager = $eventManager ?? $objectManager->get(Manager::class);
+
+        foreach (array_slice($parameters, 1) as $parameter) {
+            $parameterName = $parameter->getName();
+            $type = $parameter->getType();
+            $typeName = $type instanceof \ReflectionNamedType ? $type->getName() : '';
+
+            if ($parameterName === 'ipAddress' || $typeName === self::IP_ADDRESS_CLASS) {
+                if (class_exists(self::IP_ADDRESS_CLASS)) {
+                    $ipAddress = $objectManager->get(self::IP_ADDRESS_CLASS);
+                    $args[] = $ipAddress;
+                    $this->ipAddressUtil = $ipAddress;
+                    continue;
+                }
+
+                if ($parameter->isDefaultValueAvailable()) {
+                    $args[] = $parameter->getDefaultValue();
+                }
+                continue;
+            }
+
+            if ($parameterName === 'eventManager' || $typeName === Manager::class) {
+                $args[] = $resolvedEventManager;
+                continue;
+            }
+
+            if ($parameter->isDefaultValueAvailable()) {
+                $args[] = $parameter->getDefaultValue();
+            }
+        }
+
+        $ctor->invokeArgs($this, $args);
     }
 
     /**
