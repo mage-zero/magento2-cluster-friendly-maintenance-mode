@@ -5,32 +5,28 @@ namespace MageZero\ClusterMaintenance\Model\Storage;
 use Magento\Framework\App\DeploymentConfig;
 
 /**
- * Resolves the active storage adapter based on deployment config.
+ * Auto-selects storage adapter based on Magento's existing configuration.
  *
- * Customer configures in env.php:
- *   'cluster_maintenance' => ['storage' => 'redis']  // or 'database'
+ * If Redis cache is configured (cache/frontend/default/backend_options/server
+ * exists in env.php), uses Redis. Otherwise falls back to database.
  *
- * Defaults to 'redis' when not configured.
+ * No customer configuration required.
  */
 class StorageResolver implements StorageInterface
 {
     private DeploymentConfig $deploymentConfig;
-
-    /** @var StorageInterface[] */
-    private array $adapters;
-
+    private RedisStorage $redisStorage;
+    private DatabaseStorage $databaseStorage;
     private ?StorageInterface $resolved = null;
 
-    /**
-     * @param DeploymentConfig $deploymentConfig
-     * @param StorageInterface[] $adapters
-     */
     public function __construct(
         DeploymentConfig $deploymentConfig,
-        array $adapters = []
+        RedisStorage $redisStorage,
+        DatabaseStorage $databaseStorage
     ) {
         $this->deploymentConfig = $deploymentConfig;
-        $this->adapters = $adapters;
+        $this->redisStorage = $redisStorage;
+        $this->databaseStorage = $databaseStorage;
     }
 
     public function hasFlag(): bool
@@ -59,16 +55,9 @@ class StorageResolver implements StorageInterface
             return $this->resolved;
         }
 
-        $type = (string) ($this->deploymentConfig->get('cluster_maintenance/storage') ?? 'redis');
+        $redisHost = $this->deploymentConfig->get('cache/frontend/default/backend_options/server');
+        $this->resolved = $redisHost ? $this->redisStorage : $this->databaseStorage;
 
-        if (!isset($this->adapters[$type])) {
-            throw new \RuntimeException(
-                "Unknown maintenance storage adapter: '{$type}'. Available: "
-                . implode(', ', array_keys($this->adapters))
-            );
-        }
-
-        $this->resolved = $this->adapters[$type];
         return $this->resolved;
     }
 }

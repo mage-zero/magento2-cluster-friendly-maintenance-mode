@@ -4,12 +4,4 @@
                 type="MageZero\ClusterMaintenance\Model\ClusterMaintenanceMode"/>
     <preference for="MageZero\ClusterMaintenance\Model\Storage\StorageInterface"
                 type="MageZero\ClusterMaintenance\Model\Storage\StorageResolver"/>
-    <type name="MageZero\ClusterMaintenance\Model\Storage\StorageResolver">
-        <arguments>
-            <argument name="adapters" xsi:type="array">
-                <item name="redis" xsi:type="object">MageZero\ClusterMaintenance\Model\Storage\RedisStorage</item>
-                <item name="database" xsi:type="object">MageZero\ClusterMaintenance\Model\Storage\DatabaseStorage</item>
-            </argument>
-        </arguments>
-    </type>
 </config>

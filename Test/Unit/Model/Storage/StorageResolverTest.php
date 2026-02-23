@@ -2,7 +2,8 @@
 
 namespace MageZero\ClusterMaintenance\Test\Unit\Model\Storage;
 
-use MageZero\ClusterMaintenance\Model\Storage\StorageInterface;
+use MageZero\ClusterMaintenance\Model\Storage\DatabaseStorage;
+use MageZero\ClusterMaintenance\Model\Storage\RedisStorage;
 use MageZero\ClusterMaintenance\Model\Storage\StorageResolver;
 use Magento\Framework\App\DeploymentConfig;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -11,85 +12,79 @@ use PHPUnit\Framework\TestCase;
 class StorageResolverTest extends TestCase
 {
     private MockObject|DeploymentConfig $deploymentConfig;
-    private MockObject|StorageInterface $redisAdapter;
-    private MockObject|StorageInterface $dbAdapter;
+    private MockObject|RedisStorage $redisStorage;
+    private MockObject|DatabaseStorage $databaseStorage;
 
     protected function setUp(): void
     {
         $this->deploymentConfig = $this->createMock(DeploymentConfig::class);
-        $this->redisAdapter = $this->createMock(StorageInterface::class);
-        $this->dbAdapter = $this->createMock(StorageInterface::class);
+        $this->redisStorage = $this->createMock(RedisStorage::class);
+        $this->databaseStorage = $this->createMock(DatabaseStorage::class);
     }
 
-    private function createResolver(?string $configValue = null): StorageResolver
+    private function createResolver(?string $redisHost): StorageResolver
     {
         $this->deploymentConfig->method('get')
-            ->with('cluster_maintenance/storage')
-            ->willReturn($configValue);
+            ->with('cache/frontend/default/backend_options/server')
+            ->willReturn($redisHost);
 
         return new StorageResolver(
             $this->deploymentConfig,
-            ['redis' => $this->redisAdapter, 'database' => $this->dbAdapter]
+            $this->redisStorage,
+            $this->databaseStorage
         );
     }
 
-    public function testDefaultsToRedis(): void
+    public function testUsesRedisWhenCacheConfigured(): void
     {
-        $resolver = $this->createResolver(null);
-        $this->redisAdapter->method('hasFlag')->willReturn(true);
+        $resolver = $this->createResolver('redis-host');
+        $this->redisStorage->expects($this->once())->method('hasFlag')->willReturn(true);
+        $this->databaseStorage->expects($this->never())->method('hasFlag');
 
         $this->assertTrue($resolver->hasFlag());
     }
 
-    public function testSelectsRedisExplicitly(): void
+    public function testFallsToDatabaseWhenNoRedisConfig(): void
     {
-        $resolver = $this->createResolver('redis');
-        $this->redisAdapter->expects($this->once())->method('setFlag')->with(true);
+        $resolver = $this->createResolver(null);
+        $this->databaseStorage->expects($this->once())->method('hasFlag')->willReturn(false);
+        $this->redisStorage->expects($this->never())->method('hasFlag');
 
-        $resolver->setFlag(true);
-    }
-
-    public function testSelectsDatabase(): void
-    {
-        $resolver = $this->createResolver('database');
-        $this->dbAdapter->expects($this->once())->method('setFlag')->with(true);
-
-        $resolver->setFlag(true);
-    }
-
-    public function testDelegatesAllMethods(): void
-    {
-        $resolver = $this->createResolver('redis');
-
-        $this->redisAdapter->method('hasFlag')->willReturn(false);
         $this->assertFalse($resolver->hasFlag());
+    }
 
-        $this->redisAdapter->expects($this->once())->method('setAddresses')->with('1.2.3.4');
-        $resolver->setAddresses('1.2.3.4');
+    public function testDelegatesAllMethodsToRedis(): void
+    {
+        $resolver = $this->createResolver('redis-host');
 
-        $this->redisAdapter->method('getAddresses')->willReturn('1.2.3.4');
+        $this->redisStorage->expects($this->once())->method('setFlag')->with(true);
+        $resolver->setFlag(true);
+
+        $this->redisStorage->method('getAddresses')->willReturn('1.2.3.4');
         $this->assertSame('1.2.3.4', $resolver->getAddresses());
+
+        $this->redisStorage->expects($this->once())->method('setAddresses')->with('5.6.7.8');
+        $resolver->setAddresses('5.6.7.8');
+    }
+
+    public function testDelegatesAllMethodsToDatabase(): void
+    {
+        $resolver = $this->createResolver(null);
+
+        $this->databaseStorage->expects($this->once())->method('setFlag')->with(false);
+        $resolver->setFlag(false);
+
+        $this->databaseStorage->method('getAddresses')->willReturn('');
+        $this->assertSame('', $resolver->getAddresses());
     }
 
     public function testCachesResolvedAdapter(): void
     {
-        $resolver = $this->createResolver('redis');
+        $resolver = $this->createResolver('redis-host');
 
-        // Call twice — DeploymentConfig::get should only be called once (cached)
-        $this->redisAdapter->method('hasFlag')->willReturn(true);
+        $this->redisStorage->method('hasFlag')->willReturn(true);
         $resolver->hasFlag();
         $resolver->hasFlag();
-
-        // If not cached, this would fail (willReturn is set for single call)
         $this->assertTrue($resolver->hasFlag());
-    }
-
-    public function testThrowsOnUnknownAdapter(): void
-    {
-        $resolver = $this->createResolver('memcached');
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage("Unknown maintenance storage adapter: 'memcached'");
-        $resolver->hasFlag();
     }
 }
