@@ -80,8 +80,9 @@ class RedisStorage implements StorageInterface
 
     private function resolveConfig(string $envVar, string $backendOption, string $default): string
     {
-        $envValue = $_ENV[$envVar] ?? $_SERVER[$envVar] ?? null;
-        if ($envValue !== null && $envValue !== '') {
+        // phpcs:ignore Magento2.Functions.DiscouragedFunction -- env var override for container config
+        $envValue = getenv($envVar);
+        if ($envValue !== false && $envValue !== '') {
             return (string) $envValue;
         }
 
@@ -97,8 +98,9 @@ class RedisStorage implements StorageInterface
 
     private function resolveDb(): int
     {
-        $envDb = $_ENV['MAGENTO_MAINTENANCE_REDIS_DB'] ?? $_SERVER['MAGENTO_MAINTENANCE_REDIS_DB'] ?? null;
-        if ($envDb !== null && $envDb !== '') {
+        // phpcs:ignore Magento2.Functions.DiscouragedFunction -- env var override for container config
+        $envDb = getenv('MAGENTO_MAINTENANCE_REDIS_DB');
+        if ($envDb !== false && $envDb !== '') {
             return (int) $envDb;
         }
 

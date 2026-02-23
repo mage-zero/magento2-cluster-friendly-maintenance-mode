@@ -38,7 +38,7 @@ class ClusterMaintenanceMode extends MaintenanceMode
         // Detect and adapt so the module works on 2.4.4 through 2.4.8+.
         if (class_exists(\Magento\Framework\App\Utility\IPAddress::class)) {
             $ipAddress = $om->get(\Magento\Framework\App\Utility\IPAddress::class);
-            parent::__construct($filesystem, $ipAddress, $eventManager);
+            parent::__construct($filesystem, $ipAddress, $eventManager); // @phpstan-ignore arguments.count
             $this->ipAddressUtil = $ipAddress;
         } else {
             parent::__construct($filesystem, $eventManager);
@@ -167,7 +167,7 @@ class ClusterMaintenanceMode extends MaintenanceMode
         $mask = str_repeat("\xff", (int) ($bits / 8));
         $remainder = $bits % 8;
         if ($remainder) {
-            $mask .= chr(0xff << (8 - $remainder));
+            $mask .= pack('C', 0xff << (8 - $remainder));
         }
         $mask = str_pad($mask, strlen($subnetBin), "\x00");
 
