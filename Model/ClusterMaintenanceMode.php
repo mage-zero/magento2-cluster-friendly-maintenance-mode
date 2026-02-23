@@ -6,6 +6,7 @@ use MageZero\ClusterMaintenance\Model\Storage\StorageInterface;
 use Magento\Framework\App\MaintenanceMode;
 use Magento\Framework\Event\Manager;
 use Magento\Framework\Filesystem;
+use Magento\Framework\ObjectManagerInterface;
 
 /**
  * Cluster-wide maintenance mode backed by a shared storage backend.
@@ -27,7 +28,7 @@ class ClusterMaintenanceMode extends MaintenanceMode
 
     private Manager $eventMgr;
 
-    private const IP_ADDRESS_CLASS = \Magento\Framework\App\Utility\IPAddress::class;
+    private const IP_ADDRESS_CLASS = 'Magento\\Framework\\App\\Utility\\IPAddress';
 
     public function __construct(
         Filesystem $filesystem,
@@ -54,45 +55,104 @@ class ClusterMaintenanceMode extends MaintenanceMode
     private function initializeParentMaintenanceMode(
         Filesystem $filesystem,
         ?Manager $eventManager,
-        \Magento\Framework\ObjectManagerInterface $objectManager
+        ObjectManagerInterface $objectManager
     ): void {
         $ctor = new \ReflectionMethod(MaintenanceMode::class, '__construct');
-        $parameters = $ctor->getParameters();
         $args = [$filesystem];
 
         $this->ipAddressUtil = null;
         $resolvedEventManager = $eventManager ?? $objectManager->get(Manager::class);
 
-        foreach (array_slice($parameters, 1) as $parameter) {
-            $parameterName = $parameter->getName();
-            $type = $parameter->getType();
-            $typeName = $type instanceof \ReflectionNamedType ? $type->getName() : '';
-
-            if ($parameterName === 'ipAddress' || $typeName === self::IP_ADDRESS_CLASS) {
-                if (class_exists(self::IP_ADDRESS_CLASS)) {
-                    $ipAddress = $objectManager->get(self::IP_ADDRESS_CLASS);
-                    $args[] = $ipAddress;
-                    $this->ipAddressUtil = $ipAddress;
-                    continue;
-                }
-
-                if ($parameter->isDefaultValueAvailable()) {
-                    $args[] = $parameter->getDefaultValue();
-                }
+        foreach (array_slice($ctor->getParameters(), 1) as $parameter) {
+            if ($this->appendIpAddressArgument($args, $parameter, $objectManager)) {
                 continue;
             }
 
-            if ($parameterName === 'eventManager' || $typeName === Manager::class) {
-                $args[] = $resolvedEventManager;
+            if ($this->appendEventManagerArgument($args, $parameter, $resolvedEventManager)) {
                 continue;
             }
 
-            if ($parameter->isDefaultValueAvailable()) {
-                $args[] = $parameter->getDefaultValue();
-            }
+            $this->appendDefaultArgument($args, $parameter);
         }
 
         $ctor->invokeArgs($this, $args);
+    }
+
+    /**
+     * @param array<int, mixed> $args
+     */
+    private function appendIpAddressArgument(
+        array &$args,
+        \ReflectionParameter $parameter,
+        ObjectManagerInterface $objectManager
+    ): bool {
+        if (!$this->isIpAddressParameter($parameter)) {
+            return false;
+        }
+
+        if (class_exists(self::IP_ADDRESS_CLASS)) {
+            $ipAddress = $objectManager->get(self::IP_ADDRESS_CLASS);
+            $args[] = $ipAddress;
+            $this->ipAddressUtil = $ipAddress;
+            return true;
+        }
+
+        $this->appendDefaultArgument($args, $parameter);
+        return true;
+    }
+
+    /**
+     * @param array<int, mixed> $args
+     */
+    private function appendEventManagerArgument(
+        array &$args,
+        \ReflectionParameter $parameter,
+        Manager $resolvedEventManager
+    ): bool {
+        if (!$this->isEventManagerParameter($parameter)) {
+            return false;
+        }
+
+        $args[] = $resolvedEventManager;
+        return true;
+    }
+
+    /**
+     * @param array<int, mixed> $args
+     */
+    private function appendDefaultArgument(array &$args, \ReflectionParameter $parameter): void
+    {
+        if ($parameter->isDefaultValueAvailable()) {
+            $args[] = $parameter->getDefaultValue();
+        }
+    }
+
+    private function isIpAddressParameter(\ReflectionParameter $parameter): bool
+    {
+        if ($parameter->getName() === 'ipAddress') {
+            return true;
+        }
+
+        $type = $parameter->getType();
+        if (!$type instanceof \ReflectionNamedType) {
+            return false;
+        }
+
+        return $type->getName() === self::IP_ADDRESS_CLASS;
+    }
+
+    private function isEventManagerParameter(\ReflectionParameter $parameter): bool
+    {
+        if ($parameter->getName() === 'eventManager') {
+            return true;
+        }
+
+        $type = $parameter->getType();
+        if (!$type instanceof \ReflectionNamedType) {
+            return false;
+        }
+
+        return $type->getName() === Manager::class;
     }
 
     /**
