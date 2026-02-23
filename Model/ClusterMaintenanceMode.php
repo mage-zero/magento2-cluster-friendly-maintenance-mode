@@ -4,7 +4,6 @@ namespace MageZero\ClusterMaintenance\Model;
 
 use MageZero\ClusterMaintenance\Model\Storage\StorageInterface;
 use Magento\Framework\App\MaintenanceMode;
-use Magento\Framework\App\Utility\IPAddress;
 use Magento\Framework\Event\Manager;
 use Magento\Framework\Filesystem;
 
@@ -16,24 +15,38 @@ use Magento\Framework\Filesystem;
  *
  * Falls back to the parent (file-based) implementation if the storage
  * backend is unreachable.
+ *
+ * Compatible with Magento 2.4.4+ (adapts to constructor changes in 2.4.8).
  */
 class ClusterMaintenanceMode extends MaintenanceMode
 {
     private StorageInterface $storage;
-    private IPAddress $ipAddressUtil;
+
+    /** @var object|null IPAddress utility (Magento 2.4.8+) or null */
+    private ?object $ipAddressUtil;
+
     private Manager $eventMgr;
 
     public function __construct(
         Filesystem $filesystem,
-        IPAddress $ipAddress,
         StorageInterface $storage,
         ?Manager $eventManager = null
     ) {
-        parent::__construct($filesystem, $ipAddress, $eventManager);
+        $om = \Magento\Framework\App\ObjectManager::getInstance();
+
+        // Magento 2.4.8+ added IPAddress as a required constructor parameter.
+        // Detect and adapt so the module works on 2.4.4 through 2.4.8+.
+        if (class_exists(\Magento\Framework\App\Utility\IPAddress::class)) {
+            $ipAddress = $om->get(\Magento\Framework\App\Utility\IPAddress::class);
+            parent::__construct($filesystem, $ipAddress, $eventManager);
+            $this->ipAddressUtil = $ipAddress;
+        } else {
+            parent::__construct($filesystem, $eventManager);
+            $this->ipAddressUtil = null;
+        }
+
         $this->storage = $storage;
-        $this->ipAddressUtil = $ipAddress;
-        $this->eventMgr = $eventManager
-            ?? \Magento\Framework\App\ObjectManager::getInstance()->get(Manager::class);
+        $this->eventMgr = $eventManager ?? $om->get(Manager::class);
     }
 
     /**
@@ -52,10 +65,7 @@ class ClusterMaintenanceMode extends MaintenanceMode
                     if ($allowed === $remoteAddr) {
                         return false;
                     }
-                    if (!$this->ipAddressUtil->isValidRange($allowed)) {
-                        continue;
-                    }
-                    if ($this->ipAddressUtil->rangeContainsAddress($allowed, $remoteAddr)) {
+                    if ($this->isIpInRange($allowed, $remoteAddr)) {
                         return false;
                     }
                 }
@@ -114,5 +124,53 @@ class ClusterMaintenanceMode extends MaintenanceMode
         } catch (\Exception $e) {
             return parent::getAddressInfo();
         }
+    }
+
+    /**
+     * Check if an IP address falls within a CIDR range.
+     *
+     * Uses Magento's IPAddress utility on 2.4.8+, falls back to
+     * inline inet_pton matching on older versions.
+     */
+    private function isIpInRange(string $range, string $address): bool
+    {
+        if (strpos($range, '/') === false) {
+            return false;
+        }
+
+        if ($this->ipAddressUtil !== null) {
+            return $this->ipAddressUtil->isValidRange($range)
+                && $this->ipAddressUtil->rangeContainsAddress($range, $address);
+        }
+
+        return $this->cidrMatch($range, $address);
+    }
+
+    /**
+     * Inline CIDR match for pre-2.4.8 Magento without IPAddress utility.
+     */
+    private function cidrMatch(string $range, string $address): bool
+    {
+        [$subnet, $bits] = explode('/', $range, 2);
+        $bits = (int) $bits;
+
+        $subnetBin = inet_pton($subnet);
+        $addressBin = inet_pton($address);
+
+        if ($subnetBin === false || $addressBin === false) {
+            return false;
+        }
+        if (strlen($subnetBin) !== strlen($addressBin)) {
+            return false;
+        }
+
+        $mask = str_repeat("\xff", (int) ($bits / 8));
+        $remainder = $bits % 8;
+        if ($remainder) {
+            $mask .= chr(0xff << (8 - $remainder));
+        }
+        $mask = str_pad($mask, strlen($subnetBin), "\x00");
+
+        return ($addressBin & $mask) === ($subnetBin & $mask);
     }
 }

@@ -9,6 +9,7 @@ use Magento\Framework\App\Utility\IPAddress;
 use Magento\Framework\Event\Manager;
 use Magento\Framework\Filesystem;
 use Magento\Framework\Filesystem\Directory\WriteInterface;
+use Magento\Framework\ObjectManagerInterface;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
@@ -19,15 +20,16 @@ class ClusterMaintenanceModeTest extends TestCase
 {
     private MockObject|StorageInterface $storage;
     private MockObject|Manager $eventManager;
-    private MockObject|IPAddress $ipAddress;
     private MockObject|WriteInterface $flagDir;
     private ClusterMaintenanceMode $model;
+
+    /** @var MockObject|null IPAddress mock on 2.4.8+, null on older versions */
+    private $ipAddress;
 
     protected function setUp(): void
     {
         $this->storage = $this->createMock(StorageInterface::class);
         $this->eventManager = $this->createMock(Manager::class);
-        $this->ipAddress = $this->createMock(IPAddress::class);
         $this->flagDir = $this->createMock(WriteInterface::class);
 
         $filesystem = $this->createMock(Filesystem::class);
@@ -35,12 +37,38 @@ class ClusterMaintenanceModeTest extends TestCase
             ->with(DirectoryList::VAR_DIR)
             ->willReturn($this->flagDir);
 
+        // The constructor uses ObjectManager to resolve IPAddress (2.4.8+)
+        // and EventManager fallback. Mock it for unit test isolation.
+        $objectManager = $this->createMock(ObjectManagerInterface::class);
+
+        $returnMap = [
+            [Manager::class, $this->eventManager],
+        ];
+
+        if (class_exists(IPAddress::class)) {
+            $this->ipAddress = $this->createMock(IPAddress::class);
+            $returnMap[] = [IPAddress::class, $this->ipAddress];
+        } else {
+            $this->ipAddress = null;
+        }
+
+        $objectManager->method('get')->willReturnMap($returnMap);
+        \Magento\Framework\App\ObjectManager::setInstance($objectManager);
+
         $this->model = new ClusterMaintenanceMode(
             $filesystem,
-            $this->ipAddress,
             $this->storage,
             $this->eventManager
         );
+    }
+
+    protected function tearDown(): void
+    {
+        // Reset the ObjectManager singleton to avoid leaking into other tests
+        $reflection = new \ReflectionClass(\Magento\Framework\App\ObjectManager::class);
+        $property = $reflection->getProperty('_instance');
+        $property->setAccessible(true);
+        $property->setValue(null, null);
     }
 
     // ── isOn() ──────────────────────────────────────────────────────────
@@ -81,7 +109,7 @@ class ClusterMaintenanceModeTest extends TestCase
     {
         $this->storage->method('hasFlag')->willReturn(true);
         $this->storage->method('getAddresses')->willReturn('1.2.3.4');
-        $this->ipAddress->method('isValidRange')->willReturn(false);
+        // '1.2.3.4' has no CIDR prefix — isIpInRange returns false regardless of backend
         $this->assertTrue($this->model->isOn('9.9.9.9'));
     }
 
@@ -89,10 +117,15 @@ class ClusterMaintenanceModeTest extends TestCase
     {
         $this->storage->method('hasFlag')->willReturn(true);
         $this->storage->method('getAddresses')->willReturn('10.0.0.0/8');
-        $this->ipAddress->method('isValidRange')->with('10.0.0.0/8')->willReturn(true);
-        $this->ipAddress->method('rangeContainsAddress')
-            ->with('10.0.0.0/8', '10.1.2.3')
-            ->willReturn(true);
+
+        // On 2.4.8+, IPAddress mock handles CIDR; on older, inline cidrMatch does
+        if ($this->ipAddress !== null) {
+            $this->ipAddress->method('isValidRange')->with('10.0.0.0/8')->willReturn(true);
+            $this->ipAddress->method('rangeContainsAddress')
+                ->with('10.0.0.0/8', '10.1.2.3')
+                ->willReturn(true);
+        }
+
         $this->assertFalse($this->model->isOn('10.1.2.3'));
     }
 
@@ -100,10 +133,14 @@ class ClusterMaintenanceModeTest extends TestCase
     {
         $this->storage->method('hasFlag')->willReturn(true);
         $this->storage->method('getAddresses')->willReturn('10.0.0.0/8');
-        $this->ipAddress->method('isValidRange')->with('10.0.0.0/8')->willReturn(true);
-        $this->ipAddress->method('rangeContainsAddress')
-            ->with('10.0.0.0/8', '192.168.1.1')
-            ->willReturn(false);
+
+        if ($this->ipAddress !== null) {
+            $this->ipAddress->method('isValidRange')->with('10.0.0.0/8')->willReturn(true);
+            $this->ipAddress->method('rangeContainsAddress')
+                ->with('10.0.0.0/8', '192.168.1.1')
+                ->willReturn(false);
+        }
+
         $this->assertTrue($this->model->isOn('192.168.1.1'));
     }
 
